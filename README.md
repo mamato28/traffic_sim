@@ -1,7 +1,7 @@
 # traffic_sim
 
-this is the intro for this system
+This is a web-based light-weight traffic simulator, it contains function such as adjusting the mass of the vehicle and the pedestrian, and the velocity of the vehicle.
 
-2nd commit
+It can show demonstrate if the car will stop under the condition of a pedestrian crossing the road without knowing any vehicle is rushing to him/her.
 
-3rd commit
+The index.html is in the folder: web.
