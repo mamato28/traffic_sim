@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Project4</title>
+
+    <script src="../modules/progressbar.js"></script>
+
+    <link rel="stylesheet" href="style.css">
+
+    <!-- 
+    if not using the dat.gui as a module, you can use the cdn link
+    google dat.gui cdn
+    copy the link as follow :
+    
+    
+    <script 
+    src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.9/dat.gui.js" 
+    integrity="sha512-Mcz+Mt8k23j06ycA5EJGfyXbtzB6xqEoJxjGftQQoed/zQzem9Lt21LRymjlcm+NUsbF0LOHgfdN8LO8GtKDOw==" 
+    crossorigin="anonymous" 
+    referrerpolicy="no-referrer">
+    </script>
+
+    -->
+    
+    
+</head>
+
+<div id="HUD">
+    <div id="speedometerCar">SPEED</div>
+</div>
+
+<img id="reset" src="../icons/reset_button.svg" alt="RESET">
+
+<div id="showDistanceArea"></div>
+
+
+
+<body>
+    
+
+    <span id="distance"></span>
+
+    <script src="../modules/stats.min.js"></script>
+    
+
+    <script type="module">
+
+        /*  // stats.js one-line code
+        (function() {
+            var script=document.createElement('script');
+            script.onload=function() {
+                var stats=new Stats();
+                document.body.appendChild(stats.dom);
+                requestAnimationFrame(function loop() {
+                    stats.update();
+                    requestAnimationFrame(loop)
+                });
+            };
+            script.src='https://mrdoob.github.io/stats.js/build/stats.min.js';
+            document.head.appendChild(script);
+        })()
+        */
+
+        import * as THREE from "../modules/three.module.js";
+        import * as CANNON from "../modules/cannon-es.js";
+        import CannonDebugger from "../modules/cannon-es-debugger.js";
+        import { OrbitControls } from "../modules/OrbitControls.js";
+        import { GLTFLoader } from "../modules/GLTFLoader.js";
+        import { GUI } from "../modules/dat.gui.module.js";
+        //import * as STATS from "../modules/stats.min.js";
+        //import * as Status from "../modules/stats.min.js";
+        
+    
+
+        // declare variables
+        let scene, camera, renderer;        // 3js initScene()
+        let world, cannonDebugger;      // cannon js initworld()
+        let timeStep = 1/60;        // refreshes the web 60 times in 1 second
+        //let controls;       // orbit controls
+        let soundSpeeder, soundCollision, soundBackground;       // sound file
+        let chaseCam, chaseCamPivot;
+        let view = new THREE.Vector3();
+        let groundMaterial;      // ground material
+        let speederBody, speederMesh;       // player, car
+        let humanBody, humanMesh;       // human, dog
+        let trafficlightBody, trafficlightMesh;     // traffic light
+        let carThing = {
+            speedCar : 0, 
+            maxSpeedCar : 1, 
+            accelerationCar : 0.1, 
+            angleCar : 0
+        };       // key controls for car
+
+        let humanThing = {
+            speedHuman : 0, 
+            maxSpeedHuman : 1, 
+            accelerationHuman : 0.1, 
+            angleHuman : 0
+        };        // key controls for human
+        
+        const textureLoader = new THREE.TextureLoader();        // texture loader for all textures
+        
+        const reset = document.getElementById("reset");
+        reset.addEventListener("click" , function() {
+            resetSpeeder();
+        } );
+        reset.addEventListener("click" , function() {
+            resetHuman();
+        } );
+
+        let bar = new ProgressBar.SemiCircle("#speedometerCar", {
+            strokeWidth: 16,
+            color: '#FFEA82',
+            trailColor: '#eee',
+            trailWidth: 2,
+            easing: 'easeInOut',
+            duration: 1000,
+            svgStyle: null,
+            text: {
+                value: '',
+                alignToBottom: false
+            },
+            from: {color: '#FFEA82'},       // starting color
+            to: {color: '#ED6A5A'},         // ending color
+            // Set default step function for all animate calls
+            step: (state, bar) => {
+                bar.path.setAttribute('stroke', state.color);
+                let value = Math.round(bar.value() * 100);
+                if (value === 0) {
+                    bar.setText('');
+                } else {
+                    bar.setText(value);
+                }
+                bar.text.style.color = state.color;
+            }
+        });
+
+        bar.text.style.top = "5vw";
+        bar.text.style.fontFamily = '"Arial", Helvetica, sans-serif';
+        bar.text.style.fontSize = '2.0vw';
+
+        
+
+        // status of the website  1.fps 2.ms 3.ram usage
+        var stats1 = new Stats();
+        stats1.showPanel(0); // Panel 0 = fps
+        stats1.domElement.style.cssText = 'position:absolute;bottom:0px;left:0px;';
+        document.body.appendChild(stats1.domElement);
+
+        var stats2 = new Stats();
+        stats2.showPanel(1); // Panel 1 = ms
+        stats2.domElement.style.cssText = 'position:absolute;bottom:0px;left:80px;';
+        document.body.appendChild(stats2.domElement);
+
+        var stats3 = new Stats();
+        stats3.showPanel(2); // Panel 2 = ram
+        stats3.domElement.style.cssText = 'position:absolute;bottom:0px;left:160px;';
+        document.body.appendChild(stats3.domElement);
+        
+
+        // setup functions
+        initScene();        // 3js
+        initWorld();        // cannon world, set gravity, debugger
+        //initOrbitControls();        // orbitcontrol
+        initSound();        // load sound
+        initChaseCam();     // chasecam
+        initLights();       // create lights
+        //initParticle();     // create particle effects
+        createGround();     // create ground
+        createCar();     // create the speeder, car
+        createHuman();      // create human
+        //createTrafficLight();       // traffic light
+        createRamp();       // creat ramp
+        animate();
+
+
+        // 3js: scene , skybox , camera , renderer
+        function initScene() {
+
+            scene = new THREE.Scene();
+
+            scene.background = new THREE.CubeTextureLoader()    // create new CubeTextureLoader
+            .setPath('../skybox/')  // all images in the skybox folder in directory
+            .load( [
+                'right.png',        // right = pos x
+                'left.png',         // left = neg x
+                'top.png',          // top = pos y
+                'bot.png',          // bottom = neg y
+                'front.png',        // front = pos z
+                'back.png'          // back = neg z
+            ] );
+        
+            // camera
+            camera = new THREE.PerspectiveCamera(
+                //objects outside the frustrum are not rendered, which can increase performance so make the frustrum as small as possible
+                75,     // field of view from top to bottom in degress
+                window.innerWidth / window.innerHeight,     // aspect ratio
+                1,      // near: objects start appearing this distance from camera
+                1000     // far: objects stop appearing this distance from camera
+            );
+
+            // orbit control camera position
+            //camera.position.set(0, 10, -15);     
+            // x, y, z temporary position until make chasecam
+            
+            // renderer
+            renderer = new THREE.WebGLRenderer( {antialias: true});     // smooths edges
+            renderer.setPixelRatio( window.devicePixelRatio );      // set device pixel ratio 
+            renderer.outputEncoding = THREE.sRGBEncoding;       // improve brightness, not nessesary
+            renderer.setSize( window.innerWidth, window.innerHeight );      // resize output canvas
+            document.body.appendChild( renderer.domElement );       // add renderer to HTML document
+
+        }
+
+
+        // create cannon world, set gravity, start debugger
+        function initWorld() {
+            
+            // cannon js world
+            world = new CANNON.World();
+            world.gravity.set( 0, -9.82, 0 );       // set gravity on y axis
+
+            // debugger puts wireframe on bodies, so you dont need to put 3js meshes on them
+            cannonDebugger = new CannonDebugger( scene, world, {
+                color: 0xffffff,        // color of wireframe
+                scale: 1.0,     // scale of wireframe, matching with the mesh world
+            });
+
+        }
+
+        // not only orbitcontrol, 1st person control , fly control
+        /*
+        function initOrbitControls() {
+
+            controls = new OrbitControls( camera, renderer.domElement );
+            controls.enableDamping = true;      // adds deceleration effect
+            controls.dampingFactor = 0.05;      // damps the effect of inertia ( resistance to change in velocity )
+            controls.maxDistance = 1000;        // so we cannot zoom out very far ( max dolly out )
+
+        }
+        */
+
+        function initSound() {
+
+            // three.audio = source, three.audiolistener = listener
+            const listener = new THREE.AudioListener();     // create audiolistener ( sound listener )
+            camera.add(listener);       // add audiolistener to camera
+
+            const audioLoader = new THREE.AudioLoader();        // load sound file into audio object's file
+            
+
+            soundBackground = new THREE.Audio(listener);       // create audio source ( sound )
+
+            audioLoader.load("../sound/bird_singing.mp3" , function( buffer ) {
+                soundBackground.setBuffer( buffer );
+                soundBackground.setLoop( true );       // sound will loop when done
+                soundBackground.setVolume( 0.1 );      // set volume of this sound
+                //soundBackground.play();     // play the song right away
+            } );
+
+            //car moving sound
+            soundSpeeder = new THREE.Audio(listener);       // create audio source ( sound )
+
+            audioLoader.load("../sound/car_moving_sound.m4a" , function( buffer ) {
+                soundSpeeder.setBuffer( buffer );
+                soundSpeeder.setLoop( true );       // sound will loop when done
+                soundSpeeder.setVolume( 0.4 );      // set volume of this sound
+            } );
+            
+            //collision sound
+            soundCollision = new THREE.Audio(listener);       // create audio source ( sound )
+
+            audioLoader.load("../sound/jump_sound.mp3" , function( buffer ) {
+                soundCollision.setBuffer( buffer );
+                soundCollision.setLoop( false );       // sound will loop when done
+                soundCollision.setVolume( 0.7 );      // set volume of this sound
+            } );
+        }
+
+
+        function initChaseCam() {
+
+            chaseCam = new THREE.Object3D();        // make chasecam object
+            chaseCam.position.set(0, 0, 0);     // set chasecam position ( cam position 1)
+
+            chaseCamPivot = new THREE.Object3D();       // make chasecampivot object
+            chaseCamPivot.position.set(0, 8, -20);      // set chasecampivot position ( cam position 2)
+
+            chaseCam.add(chaseCamPivot);        // add chasecampivot as child to chasecam
+            // if the position or the rotation changes, it will affect all children of the object
+            
+            scene.add(chaseCam);        // add chasecam to the scene
+        }
+
+        function initLights() {
+
+            const dirLight = new THREE.DirectionalLight();
+            dirLight.position.set(25, 120, 25);        // x, y, z
+            scene.add(dirLight);
+
+            const ambLight = new THREE.HemisphereLight(0xffffbb, 0x080820, 0.3);
+            scene.add(ambLight);            
+        }
+
+        function initParticle() {
+            
+            const particleMaterial = new THREE.PointsMaterial({color: 0xFF0000, size: 0.1});
+            const particleGeometry = new THREE.Geometry();
+            const particles = new THREE.Points(particleGeometry, particleMaterial);
+            scene.add(particles);
+
+        }
+
+
+        function createGround() {
+
+            groundMaterial = new CANNON.Material("groundMaterial");     // create physics material for the ground
+            
+            // plane doesnet have the edges
+            const groundShape = new CANNON.Plane();
+            // const groundShape = new CANNON.Box( new CANNON.Vec3(12, 12, 0.5));
+            // if using box, bellow (const groundGeo) will be 2x = 24, 24, 1
+
+            const groundBody = new CANNON.Body( {       //create body
+                mass: 0,        // if mass = 0 , it is static, doesnt move
+                shape: groundShape,
+                material: groundMaterial
+            } );
+
+            //set the rotation, rotate the ground so it is flat on y axis, so y+ is up, ( -math.pi/2 = -90 degree in radian )
+            groundBody.quaternion.setFromAxisAngle( new CANNON.Vec3(1, 0, 0), -Math.PI/2 );   
+
+            world.addBody( groundBody );        // add body to physics world
+
+            const groundTexture = textureLoader.load("../textures/asphalt.jpeg");       // load texture
+            groundTexture.wrapS = THREE.RepeatWrapping;     // wrap horizontally
+            groundTexture.wrapT = THREE.RepeatWrapping;     // wrap vertically
+            groundTexture.repeat.set(100, 100);        // how many times texture repeated on surface
+
+            const groundMat = new THREE.MeshStandardMaterial( {
+                // color: 0xf2a23a,     // color values will be combined with texture color
+                map: groundTexture,
+            } );
+
+            // if using the box body for the ground, 3js dimensions should be 2x of cannon.js dimensions
+            const groundGeo = new THREE.BoxGeometry(1000, 2, 1000);
+            // if using plane, then it doesnt matter
+
+            const groundMesh = new THREE.Mesh( groundGeo, groundMat );
+            scene.add( groundMesh );
+            groundMesh.position.set(0, -1, 0);
+
+        }
+
+
+        function createCar() {
+
+            // create physics material for speeder body
+            const speederMaterial = new CANNON.Material("speederMaterial");
+
+             
+            // create contact material, defines how object behave on the ground and ramp
+            const car_ground_cm = new CANNON.ContactMaterial( groundMaterial, speederMaterial, {
+                friction: 0.8,      // set friction ( 0 = no friction )
+                restitution: 0.01,       // set bounciness ( 1 = very bouncy )
+                contactEquationStiffness: 1e9,      // controls sponginess of contact, lower = more spongy, e = how many 0 behind
+                contactEquationRelaxation: 3,       // relaxation time of contact equation, higher = more spongy
+                frictionEuationStiffness: 1e5,      // stiffness of friction equation, higher = greater friction effect
+                frictionEquationRelaxation: 3,      // relaxation time of friction equation, higher = greater friction effect
+            } );
+            world.addContactMaterial(car_ground_cm);       // add contact material to physics world
+
+
+            // create body shape
+            const speederBodyShape = new CANNON.Box( new CANNON.Vec3(1, 0.1, 2) );     // manage the shape to fufill your demand
+
+            // body moved by the user = dynamic body, mass will always > 0
+            speederBody = new CANNON.Body( {
+                mass: 100,
+                shape: speederBodyShape,
+                material: speederMaterial
+            } );
+
+            speederBody.linearDamping = 0.31;
+
+            // flipping control
+            //speederBody.angularDamping = 0.9;     // 1 = less flipping, 0 = more flipping
+            speederBody.fixedRotation = true;       // keeps from flipping
+            speederBody.updateMassProperties();     // use if fixedrotation = true
+
+            speederBody.position = new CANNON.Vec3(0, 1, 0);      // set the position at the origin (x, y, z)
+
+            world.addBody( speederBody );       // add the body to world
+
+
+            // load 3d model
+            const carGloader = new GLTFLoader();       // create instance of gltf loader
+
+            carGloader.load("..//models/car/scene.gltf", (gltf) => {       // load scene.gltf from model folder, run function
+                speederMesh = gltf.scene;       // speederMesh object is gltf model
+                speederMesh.scale.set(0.95, 0.95, 0.95);        // scale the 3d model
+                speederMesh.position.copy( speederBody.position);       // set model position from body
+                speederMesh.quaternion.copy(speederBody.quaternion);        // set model rotation from body
+
+                speederMesh.add(chaseCam);      // add chasecam as child of speedermesh
+                // if position and the rotation changes, it will affect all the children object
+
+                scene.add(speederMesh);     // add model to the scene
+            } );
+
+        }
+        
+        
+        function createHuman() {
+
+            const humanMaterial = new CANNON.Material("humanMaterial");
+
+            const human_ground_cm = new CANNON.ContactMaterial( groundMaterial, humanMaterial, {
+                friction: 0.8,      // set friction ( 0 = no friction )
+                restitution: 0.01,       // set bounciness ( 1 = very bouncy )
+                contactEquationStiffness: 1e9,      // controls sponginess of contact, lower = more spongy, e = how many 0 behind
+                contactEquationRelaxation: 3,       // relaxation time of contact equation, higher = more spongy
+                frictionEuationStiffness: 1e5,      // stiffness of friction equation, higher = greater friction effect
+                frictionEquationRelaxation: 3,      // relaxation time of friction equation, higher = greater friction effect
+            } );
+            world.addContactMaterial(human_ground_cm);  
+
+            const humanBodyShape = new CANNON.Box( new CANNON.Vec3(0.7, 0.7, 0.7) );
+
+            humanBody = new CANNON.Body({
+                mass: 1,
+                material: humanMaterial,
+                shape: humanBodyShape
+            });
+
+            humanBody.fixedRotation = true;       // keeps from flipping
+            humanBody.updateMassProperties();     // use if fixedrotation = true
+
+            humanBody.position = new CANNON.Vec3(2, 1, 0);
+            //humanBody.position.set(5, 5, 0);
+
+            world.addBody(humanBody);
+
+            const humanGloader = new GLTFLoader();       // create instance of gltf loader
+
+            humanGloader.load("..//models/dog/scene.gltf", (gltf) => {       // load scene.gltf from model folder, run function
+                humanMesh = gltf.scene;       // speederMesh object is gltf model
+                humanMesh.scale.set(0.9, 0.9, 0.9);        // scale the 3d model
+                humanMesh.position.copy( humanBody.position );       // set model position from body
+                humanMesh.quaternion.copy( humanBody.quaternion );        // set model rotation from body
+
+                scene.add(humanMesh);     // add model to the scene
+            } );
+
+        }
+        /*
+        function createTrafficLight () {
+
+            const trafficlightMaterial = new CANNON.Material("trafficlightMaterial");
+
+            const trafficlightBodyShape = new CANNON.Box( new CANNON.Vec3(1, 1.5, 1) );
+
+            trafficlightBody = new CANNON.Body({
+                mass: 1,
+                material: trafficlightMaterial,
+                shape: trafficlightBodyShape
+            });
+
+            trafficlightBody.position.set(2, 2, 0);
+
+            world.addBody(trafficlightBody);
+
+            const humanGloader = new GLTFLoader();       // create instance of gltf loader
+
+            humanGloader.load("..//models/dog/scene.gltf", (gltf) => {       // load scene.gltf from model folder, run function
+                humanMesh = gltf.scene;       // speederMesh object is gltf model
+                humanMesh.scale.set(0.9, 0.9, 0.9);        // scale the 3d model
+                humanMesh.position.copy( trafficlightBody.position );       // set model position from body
+                humanMesh.quaternion.copy( trafficlightBody.quaternion );        // set model rotation from body
+
+                scene.add(humanMesh);     // add model to the scene
+            } );
+
+        }
+        */
+        
+
+
+        function createRamp () {
+
+            // ramp body shape
+            const rampShape = new CANNON.Box( new CANNON.Vec3(5, 1, 20));       // width, height, lenght
+
+            // create ramp body with no mass ( static ), rampshape above, and same material as ground
+            const rampBody = new CANNON.Body( {
+                mass: 0,
+                shape: rampShape,
+                material: groundMaterial
+            } );
+
+            // set ramp body position
+            rampBody.position = new CANNON.Vec3(0, 1, 14);      // x, y, z
+
+            // set ramp body rotation: rotate ramp on x axis by -math/pi/12 = -15 degree
+            rampBody.quaternion.setFromAxisAngle( new CANNON.Vec3(1, 0, 0), -Math.PI/12 );
+
+            // add ramp body to the world
+            world.addBody( rampBody );
+
+            const rampMat = new THREE.MeshStandardMaterial({ color: 0xd3c3a2 });
+
+            const rampGeo = new THREE.BoxGeometry(10, 2, 40);       // 3js dimension should be 2x cannon.js dimension
+
+            const rampMesh = new THREE.Mesh( rampGeo, rampMat);
+            scene.add(rampMesh);
+            rampMesh.position.copy(rampBody.position);
+            rampMesh.quaternion.copy(rampBody.quaternion);
+
+        }
+
+
+
+        document.onkeydown = ( event ) => {
+            
+            console.log(event);
+            
+            switch(event.key) {
+                // car part
+                case "ArrowLeft":
+                    carThing.angleCar += (Math.PI/180);     // turn left 1 degree in radian (if math.pi/180)
+                    break;
+                
+                case "ArrowRight":
+                    carThing.angleCar -= (Math.PI/180);     // turn right 1 degree in radian (if math.pi/180)
+                    break;
+
+                case "ArrowUp":
+                    carThing.speedCar += carThing.accelerationCar;      // add acceleration to the speed
+                    if ( carThing.speedCar > carThing.maxSpeedCar ) carThing.speedCar = carThing.maxSpeedCar;       // set maxspeed
+                    if ( !soundSpeeder.isPlaying ) soundSpeeder.play();
+                    updateHUD();
+                    break;
+                
+                case "ArrowDown":
+                    carThing.speedCar -= carThing.accelerationCar;      // minus acceleration to the speed
+                    if ( carThing.speedCar <= 0 ) {      // // set min speed = 0, which means cannot go reverse
+                        carThing.speedCar = 0
+                        if ( soundSpeeder.isPlaying ) soundSpeeder.stop();
+                    }
+                    updateHUD();
+                    break;
+                
+                
+                // human part
+                case "a":
+                    humanThing.angleHuman += (Math.PI/180);
+                    break;
+                
+                case "d":
+                    humanThing.angleHuman -= (Math.PI/180);
+                    break;
+                
+                case "w":
+                    humanThing.speedHuman += humanThing.accelerationHuman;
+                    if ( humanThing.speedHuman > humanThing.maxSpeedHuman ) humanThing.speedHuman = humanThing.maxSpeedHuman;
+                    break;
+                
+                case "s":
+                    humanThing.speedHuman -= humanThing.accelerationHuman;
+                    if ( humanThing.speedHuman <= 0 ) {
+                        humanThing.speedHuman = 0;
+                    }
+                    break;
+                
+            }
+
+            speederBody.quaternion.setFromAxisAngle( new CANNON.Vec3(0, 1, 0), carThing.angleCar);
+
+            humanBody.quaternion.setFromAxisAngle( new CANNON.Vec3(0, 1, 0), humanThing.angleHuman);
+
+        }
+
+
+        function moveCar() {
+
+            // update position based on unit circle
+            speederBody.position.x += carThing.speedCar * Math.sin( carThing.angleCar );
+            speederBody.position.z += carThing.speedCar * Math.cos( carThing.angleCar );
+
+            // update position and rotation of speeder mesh from 
+
+            if(speederMesh) {
+                speederMesh.position.copy(speederBody.position);
+                speederMesh.quaternion.copy(speederBody.quaternion);
+
+                camera.lookAt(speederMesh.position);        // camera will follow new speedermesh position
+            }
+
+        }
+
+
+        function moveHuman() {
+            humanBody.position.x += humanThing.speedHuman * Math.sin( humanThing.angleHuman );
+            humanBody.position.z += humanThing.speedHuman * Math.cos( humanThing.angleHuman );
+
+            if(humanMesh) {
+                humanMesh.position.copy(humanBody.position);
+                humanMesh.quaternion.copy(humanBody.quaternion);
+
+                //camera.lookAt(humanMesh.position);        // camera will follow new speedermesh position
+            }
+
+        }
+
+
+        function animate() {
+
+            //controls.update();
+            // update orbit controls when enabling damping
+            // will fight with the chasecam
+
+            //cannonDebugger.update();        // update wireframe position and rotation of bodies
+
+            world.step(timeStep);        // step the animation
+
+            //checkCollisions();
+
+            moveCar();      // update body position and rotation
+
+            moveHuman();        // move human
+
+            updateChaseCam();       // update chasecam
+
+            updateDistance();
+
+            renderer.render( scene, camera);
+
+            stats1.update();
+            stats2.update();
+            stats3.update();
+
+            requestAnimationFrame( animate );       // loop the animation function
+
+        }
+
+        function checkCollisions() {
+            /*
+            if(speederBody.intersects(humanBody)) {
+                soundCollision.play();
+            }
+            */
+            //const distanceCarHuman = speederBody.position.distanceTo(humanBody.position);
+            
+        }
+
+        
+        function updateDistance() {
+            //car.position.copy(speederBody.position);
+            //human.position.copy(humanBody.position);
+            const distanceCarHuman = speederBody.position.distanceTo(humanBody.position);
+            const collisionDistance = 1.5;
+            if (distanceCarHuman < collisionDistance ) {
+                soundCollision.play();
+                document.getElementById("showDistanceArea").innerText = 'Crashed';
+                carThing.speedCar = 0;
+                humanThing.speedHuman = 0;
+            } 
+            else {
+                document.getElementById("showDistanceArea").innerText = `Distance: ${distanceCarHuman.toFixed(2)} units`;
+            }
+            
+            //distance = (Math.round((cube.distanceToPoint(target)*10))/10).toFixed(1);
+            //span1.innerText = "Distance to human \n " + distance + "m";
+            
+        }
+
+        function updateChaseCam() {
+            chaseCamPivot.getWorldPosition( view );     // view = vector 3, so it gets position of object in world (x, y, z)
+            if ( view.y < 1 ) view.y = 1;
+            // make sure the y coordinates always positive
+            // if the camera be negative, it will flip
+            // the gap between chasecam and the speeder, the distance from the 1st vector, higher the number, the speeder is tighter to the camera all the time
+
+            camera.position.lerpVectors( camera.position, view, 1);
+            // if the third number become 0, the camera is in the object
+            // it should be the same as the chasecampivot which is = view
+
+        }
+
+        // reset car
+        function resetSpeeder () {
+            
+            carThing.angleCar = 0;      // reset angle to start position
+            carThing.speedCar = 0;      // reset speed to 0
+            updateHUD();
+            
+            if ( soundSpeeder.isPlaying ) soundSpeeder.stop();      // stop the sound if it is playing
+
+            speederBody.velocity = new CANNON.Vec3(0, 0, 0);        // clear velocity
+            speederBody.angularVelocity = new CANNON.Vec3(0, 0, 0);     // clear angular velocity
+
+            speederBody.quaternion.set(0, 0, 0, 1);     //set to original rotation
+            speederMesh.quaternion.copy(speederBody.quaternion);
+
+            speederBody.position.set(0, 1, 0);      // set to original position
+            speederMesh.position.copy(speederBody.position);
+
+        }
+
+        // reset human
+        function resetHuman () {
+            humanThing.angleHuman = 0;
+            humanThing.speedHuman = 0;
+
+            humanBody.velocity = new CANNON.Vec3(0, 0, 0);        // clear velocity
+            humanBody.angularVelocity = new CANNON.Vec3(0, 0, 0);     // clear angular velocity
+
+            humanBody.quaternion.set(0, 0, 0, 1);     //set to original rotation
+            humanMesh.quaternion.copy(speederBody.quaternion);
+
+            humanBody.position.set(2, 1, 0);      // set to original position
+            humanMesh.position.copy(humanBody.position);
+
+        }
+
+        function updateHUD() {
+            bar.animate(carThing.speedCar);     // animating speed variable, default 0.0-1.0
+        }
+
+        function onWindowResize() {
+            
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize( window.innerWidth, window.innerHeight );
+
+        }
+
+        window.addEventListener( 'resize', onWindowResize );        // handle window resizing
+
+
+
+        // dat.gui
+
+        // const gui = new dat.GUI();  // for using dat.gui cdn
+        const datgui = new GUI();  // for dat.gui module
+        
+
+        const folderCar = datgui.addFolder("Car Control");
+        folderCar.closed = true;
+        folderCar.add(carThing, "speedCar", 0, 1, 0.1).name("Speed of Car");
+        //folderCar.add(carThing, "maxSpeedCar", 0, 1, 0.1).name("MAX Speed of Car");
+        folderCar.add(carThing, "accelerationCar").name("Acceleration of Car");
+        folderCar.add(carThing, "angleCar", 0, 180, 5).name("Angle of Car");
+        
+        const folderHuman = datgui.addFolder("Human Control");
+        folderHuman.closed = true;
+        folderHuman.add(humanThing, "speedHuman", 0, 1, 0.1).name("Speed of Human");
+        //folderCar.add(carThing, "maxSpeedCar", 0, 1, 0.1).name("MAX Speed of Car");
+        folderHuman.add(humanThing, "accelerationHuman").name("Acceleration of Human");
+        folderHuman.add(humanThing, "angleHuman", 0, 180, 5).name("Angle of Human");
+
+
+        //let controller = gui.add(window, 'speedCar').min(0).max(100).step(1);
+        /*
+        // When the value of the controller changes, update the variable
+        controller.onChange(function(value) {
+              speedCar = value;
+        });
+        */
+        
+
+    </script>
+
+
+
+</body>
+
+</html>

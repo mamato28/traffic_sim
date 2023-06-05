@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Object Distance Example</title>
+    <style>
+      body {
+        margin: 0;
+      }
+      canvas {
+        display: block;
+      }
+      #distance {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background-color: rgba(255, 255, 255, 0.7);
+        padding: 5px;
+        border-radius: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="distance"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/cannon-es@0.9.0/dist/cannon-es.min.js"></script>
+    <script>
+    // Set up three.js scene
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Set up cannon-es.js
+    const world = new CANNON.World();
+    world.gravity.set(0, -9.82, 0); // Apply gravity
+
+    // Add two objects to the scene
+    const boxGeometry = new THREE.BoxGeometry();
+    const sphereGeometry = new THREE.SphereGeometry(1);
+    const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+    const box = new THREE.Mesh(boxGeometry, material);
+    const sphere = new THREE.Mesh(sphereGeometry, material);
+
+    box.position.set(-2, 0, 0);
+    sphere.position.set(2, 0, 0);
+
+    scene.add(box);
+    scene.add(sphere);
+
+    // Add physics to the objects
+    const boxBody = new CANNON.Body({
+        mass: 1,
+        position: new CANNON.Vec3(-2, 0, 0),
+        shape: new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5)),
+    });
+
+    const sphereBody = new CANNON.Body({
+        mass: 1,
+        position: new CANNON.Vec3(2, 0, 0),
+        shape: new CANNON.Sphere(1),
+    });
+
+    world.addBody(boxBody);
+    world.addBody(sphereBody);
+
+    camera.position.z = 5;
+
+    const clock = new THREE.Clock();
+
+    const animate = function () {
+        
+
+        // Update physics
+        const delta = clock.getDelta();
+        world.step(delta);
+
+        // Update three.js objects with physics data
+        box.position.copy(boxBody.position);
+        box.quaternion.copy(boxBody.quaternion);
+        sphere.position.copy(sphereBody.position);
+        sphere.quaternion.copy(sphereBody.quaternion);
+
+        // Calculate and display the distance between the two objects
+        const distance = box.position.distanceTo(sphere.position);
+        document.getElementById("distance").innerText = `Distance: ${distance.toFixed(2)} units`;
+
+        renderer.render(scene, camera);
+
+        requestAnimationFrame(animate);
+    };
+
+    animate();
+</script>
+

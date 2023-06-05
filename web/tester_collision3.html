@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Page Title</title>
+</head>
+<body>
+
+<script>
+    // Import libraries
+    import * as THREE from 'three';
+    import { CannonPhysics } from 'cannon-es';
+
+    // Create scene, camera and renderer
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.z = 5;
+
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Create world for physics simulation
+    const world = new CannonPhysics.World();
+    world.gravity.set(0, -9.82, 0); // Gravity pointing down
+
+    // Add two cubes
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const materialA = new THREE.MeshBasicMaterial({color: 0x00ff00});
+    const materialB = new THREE.MeshBasicMaterial({color: 0x00ff00});
+
+    const cubeA = new THREE.Mesh(geometry, materialA);
+    scene.add(cubeA);
+
+    const cubeB = new THREE.Mesh(geometry, materialB);
+    cubeB.position.x = 2;
+    scene.add(cubeB);
+
+    // Corresponding physics bodies
+    const shape = new CannonPhysics.Box(new CannonPhysics.Vec3().copy(geometry.parameters));
+
+    const bodyA = new CannonPhysics.Body({ mass: 1, shape: shape });
+    bodyA.position.copy(cubeA.position);
+    world.addBody(bodyA);
+
+    const bodyB = new CannonPhysics.Body({ mass: 1, shape: shape });
+    bodyB.position.copy(cubeB.position);
+    world.addBody(bodyB);
+
+    // Particle System
+    const particleMaterial = new THREE.PointsMaterial({color: 0xFF0000, size: 0.1});
+    const particleGeometry = new THREE.Geometry();
+    const particles = new THREE.Points(particleGeometry, particleMaterial);
+    scene.add(particles);
+
+    // Last collision time
+    let lastCollisionTime = Date.now();
+    const collisionCooldown = 3000;  // milliseconds
+
+    // Animation loop
+    function animate() {
+    requestAnimationFrame(animate);
+    
+    // Step the physics world
+    world.step(1 / 60);
+
+    // Copy coordinates from physics bodies to Three.js objects
+    cubeA.position.copy(bodyA.position);
+    cubeA.quaternion.copy(bodyA.quaternion);
+
+    cubeB.position.copy(bodyB.position);
+    cubeB.quaternion.copy(bodyB.quaternion);
+
+    // Detect collision
+    const collisionDistance = 1.0;  // adjust as needed
+    if (cubeA.position.distanceTo(cubeB.position) < collisionDistance && Date.now() - lastCollisionTime > collisionCooldown) {
+        // Change color to red
+        materialA.color.set(0xFF0000);
+        materialB.color.set(0xFF0000);
+
+        // Add particle
+        particleGeometry.vertices.push(cubeA.position.clone());
+        particleGeometry.verticesNeedUpdate = true;
+
+        // Update last collision time
+        lastCollisionTime = Date.now();
+
+        // Schedule color change back to original after 3 seconds
+        setTimeout(() => {
+        materialA.color.set(0x00ff00);
+        materialB.color.set(0x00ff00);
+        }, 3000);
+    }
+
+    // Render the scene
+    renderer.render(scene, camera);
+    }
+
+    animate();
+</script>
+
+</body>
+</html>
